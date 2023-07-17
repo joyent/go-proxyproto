@@ -304,7 +304,7 @@ func sendProxyProtocolV2(conn net.Conn, addrType string, enableTlvs bool) error 
 		af = proxyproto.TCPv6
 		src, err = net.ResolveTCPAddr("tcp6", "[fff0:ffff:ffff:ffff:ffff:ffff:ffff:ffff]:5678")
 		if err != nil {
-			fmt.Printf("failed to set src: %v \n", err)
+			log.Printf("failed to set src: %v \n", err)
 		}
 		dst, _ = net.ResolveTCPAddr("tcp6", "[ffff:fff0:ffff:ffff:ffff:ffff:ffff:ffff]:3333")
 
@@ -347,7 +347,7 @@ func sendProxyProtocolV2(conn net.Conn, addrType string, enableTlvs bool) error 
 
 		err = header.SetTLVs(tlvs)
 		if err != nil {
-			fmt.Printf("failed to set TLV: %s\n", err)
+			log.Printf("failed to set TLV: %s\n", err)
 		}
 
 		//checkTlvs(header)
@@ -509,9 +509,38 @@ func httpClient(urlAddr string, ssl bool, ppv int, addrType string, enableTlvs b
 	}
 
 	log.Printf("End HTTP(s) Client: Status: %v, Time taken: %v", resp.Status, elapsed)
-	fmt.Printf("=== Response ===\n")
-	fmt.Printf("%s", string(r))
-	fmt.Printf("================\n")
+	log.Printf("=== Response ===")
+	log.Printf("%s", string(r))
+	log.Printf("================")
+}
+
+func setupLogFile(logFileName string) func() {
+	if logFileName == "" {
+		return func() {
+		}
+	}
+	/*
+	   // Log to syslog
+	   logFile, err := syslog.New(syslog.LOG_SYSLOG, "webapi")
+	   if err != nil {
+	       log.Fatalln("Unable to set logfile:", err.Error())
+	   }
+	*/
+
+	logFile, err := os.OpenFile(logFileName, os.O_APPEND|os.O_RDWR|os.O_CREATE, 0644)
+	if err != nil {
+		log.Panic(err)
+	}
+
+	// + set log flag
+	log.SetFlags(log.Ldate | log.Ltime | log.Lmicroseconds)
+
+	// set the log output
+	log.SetOutput(logFile)
+
+	return func() {
+		logFile.Close()
+	}
 }
 
 func main() {
@@ -527,7 +556,12 @@ func main() {
 	enableTlvs := flag.Bool("tlv", true, "send TLVs")
 	addrType := flag.String("ppv-addr", "4", "IP Address version: 4,6,u")
 
+	logFileName := flag.String("logfile", "", "log file")
+
 	flag.Parse()
+
+	fn := setupLogFile(*logFileName)
+	defer fn()
 
 	switch *mode {
 	case "server":
