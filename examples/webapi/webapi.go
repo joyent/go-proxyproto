@@ -335,6 +335,8 @@ func sendProxyProtocolV2(conn net.Conn, addrType string, enableTlvs bool) error 
 		header.TransportProtocol,
 		header.SourceAddr.String(), header.DestinationAddr.String())
 
+	var enableCrc bool = false
+
 	if enableTlvs == true {
 		tlvs := []proxyproto.TLV{}
 
@@ -342,8 +344,10 @@ func sendProxyProtocolV2(conn net.Conn, addrType string, enableTlvs bool) error 
 		tlvs = setTlvUniqueId(tlvs)
 		tlvs = setTlvAws(tlvs)
 
-		// be the last
-		tlvs = setTlvCrc(tlvs)
+		if enableCrc {
+			// be the last
+			tlvs = setTlvCrc(tlvs)
+		}
 
 		err = header.SetTLVs(tlvs)
 		if err != nil {
@@ -373,7 +377,9 @@ func sendProxyProtocolV2(conn net.Conn, addrType string, enableTlvs bool) error 
 	if l%4 != 0 {
 	}
 
-	CalcCrc(buf)
+	if enableCrc {
+		CalcCrc(buf)
+	}
 
 	wl, err := bytes.NewBuffer(buf).WriteTo(conn)
 	log.Printf("Sent %d bytes", wl)
@@ -510,7 +516,7 @@ func httpClient(urlAddr string, ssl bool, ppv int, addrType string, enableTlvs b
 
 	log.Printf("End HTTP(s) Client: Status: %v, Time taken: %v", resp.Status, elapsed)
 	log.Printf("=== Response ===")
-	log.Printf("%s", string(r))
+	log.Printf("%s", "\n"+string(r))
 	log.Printf("================")
 }
 
