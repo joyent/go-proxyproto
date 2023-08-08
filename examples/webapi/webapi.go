@@ -34,6 +34,7 @@ func headers(w http.ResponseWriter, req *http.Request) {
 
 	for name, headers := range req.Header {
 		for _, h := range headers {
+			log.Printf("HTTP Header %v: %v\n", name, h)
 			fmt.Fprintf(w, "%v: %v\n", name, h)
 		}
 	}
@@ -206,7 +207,8 @@ func setTlvAws(tlvs []proxyproto.TLV) []proxyproto.TLV {
 		Type: proxyproto.PP2Type(0xea), // PP2_TYPE_AWS, 0xea
 	}
 
-	val := []byte{0x01}                         //PP2_SUBTYPE_AWS_VPCE_ID, 0x01
+	//val := []byte{0x01}                         //PP2_SUBTYPE_AWS_VPCE_ID, 0x01
+	val := []byte{0x70}
 	vpce_id.Value = append(val, tmp_vpce_id...) // vpce_id
 
 	tlvs = append(tlvs, vpce_id)
