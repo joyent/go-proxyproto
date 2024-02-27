@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -291,7 +292,7 @@ func checkTlvs(header *proxyproto.Header) {
 	}
 }
 
-func sendProxyProtocolV2(conn net.Conn, addrType string, enableTlvs bool) error {
+func sendProxyProtocolV2(conn net.Conn, addrType string, myTlvs *TLVs) error {
 	var af proxyproto.AddressFamilyAndProtocol
 	var src, dst net.Addr
 	var err error
@@ -339,16 +340,29 @@ func sendProxyProtocolV2(conn net.Conn, addrType string, enableTlvs bool) error 
 
 	var enableCrc bool = false
 
-	if enableTlvs == true {
+	if tlvs != nil {
 		tlvs := []proxyproto.TLV{}
 
-		tlvs = setTlvAlpn(tlvs)
-		tlvs = setTlvUniqueId(tlvs)
-		tlvs = setTlvAws(tlvs)
+		/*
+			tlvs = setTlvAlpn(tlvs)
+			tlvs = setTlvUniqueId(tlvs)
+			tlvs = setTlvAws(tlvs)
 
-		if enableCrc {
-			// be the last
-			tlvs = setTlvCrc(tlvs)
+			if enableCrc {
+				// be the last
+				tlvs = setTlvCrc(tlvs)
+			}
+		*/
+
+		for _, t := range *myTlvs {
+			tlv := proxyproto.TLV{
+				//Type:  proxyproto.PP2Type(0xea), // PP2_TYPE_AWS, 0xea
+				Type:  proxyproto.PP2Type(t.Code),
+				Value: []byte(t.Val),
+			}
+
+			tlvs = append(tlvs, tlv)
+			log.Printf("  TLVs: type=0x%X, val=0x%X", tlv.Type, tlv.Value)
 		}
 
 		err = header.SetTLVs(tlvs)
@@ -423,7 +437,7 @@ func initSsl(tr *http.Transport) error {
 	return nil
 }
 
-func httpClient(urlAddr string, ssl bool, ppv int, addrType string, enableTlvs bool) {
+func httpClient(urlAddr string, ssl bool, ppv int, addrType string, tlvs *TLVs) {
 	log.Printf("HTTP Client: ssl:%v, ppv:%d, addrType:%s", ssl, ppv, addrType)
 
 	tr := &http.Transport{}
@@ -444,7 +458,7 @@ func httpClient(urlAddr string, ssl bool, ppv int, addrType string, enableTlvs b
 				err = sendProxyProtocolV1(conn)
 			// version 2
 			case 2:
-				err = sendProxyProtocolV2(conn, addrType, enableTlvs)
+				err = sendProxyProtocolV2(conn, addrType, tlvs)
 			default:
 				err = nil
 				// no proxy any more
@@ -551,6 +565,44 @@ func setupLogFile(logFileName string) func() {
 	}
 }
 
+type Tlv struct {
+	Code byte
+	Val  string
+}
+type TLVs []*Tlv
+
+func (t *TLVs) String() string {
+	var v string
+
+	for _, tlv := range *t {
+		v += fmt.Sprintf("%d:%s\n", tlv.Code, tlv.Val)
+	}
+
+	return v
+}
+
+func (t *TLVs) Set(value string) error {
+	tmps := strings.Split(value, "=")
+	if len(tmps) < 2 {
+		return fmt.Errorf("param err: %s", value)
+	}
+
+	code := strings.Replace(tmps[0], "0x", "", -1)
+	code = strings.Replace(code, "0X", "", -1)
+
+	data, _ := strconv.ParseUint(code, 16, 64)
+	tlv := Tlv{
+		Code: byte(data),
+		Val:  tmps[1],
+	}
+
+	*t = append(*t, &tlv)
+
+	return nil
+}
+
+var tlvs TLVs
+
 func main() {
 	log.SetOutput(os.Stderr)
 	log.SetFlags(log.LstdFlags | log.Lmicroseconds)
@@ -561,13 +613,17 @@ func main() {
 	ssl := flag.Bool("ssl", false, "Use HTTPS")
 	url := flag.String("url", "", "url to connect")
 	ppv := flag.Int("ppv", 0, "proxy protocol version: 0,1,2, 0: disable")
-	enableTlvs := flag.Bool("tlv", true, "send TLVs")
+	//enableTlvs := flag.Bool("tlv", true, "send TLVs")
+	//enableTlvs := flag.Bool("tlv", true, "send TLVs")
+
+	flag.Var(&tlvs, "tlv", "set tlv")
 	addrType := flag.String("ppv-addr", "4", "IP Address version: 4,6,u")
 
 	logFileName := flag.String("logfile", "", "log file")
 
 	flag.Parse()
 
+	fmt.Printf("TLVs: %s \n", tlvs.String())
 	fn := setupLogFile(*logFileName)
 	defer fn()
 
@@ -575,7 +631,8 @@ func main() {
 	case "server":
 		startHttpServer(*svcaddr, *ssl, *ppv)
 	case "client":
-		httpClient(*url, *ssl, *ppv, *addrType, *enableTlvs)
+		//httpClient(*url, *ssl, *ppv, *addrType, *enableTlvs)
+		httpClient(*url, *ssl, *ppv, *addrType, &tlvs)
 	default:
 		fmt.Printf("Unknown mode: %s \n", *mode)
 	}
