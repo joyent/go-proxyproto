@@ -66,7 +66,7 @@ func dumpConn(c net.Conn, depth int) {
 			log.Printf(lead+">TLV cnt: %d", len(tlvs))
 
 			for i, tlv := range tlvs {
-				if tlv.Type == 0xe1 {
+				if tlv.Type == proxyproto.PP2_TYPE_SPC {
 					spctlv := proxyproto.NewSpcTlv()
 					spctlv.DecodeTlv(tlv.Value)
 
