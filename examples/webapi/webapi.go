@@ -66,7 +66,17 @@ func dumpConn(c net.Conn, depth int) {
 			log.Printf(lead+">TLV cnt: %d", len(tlvs))
 
 			for i, tlv := range tlvs {
-				log.Printf(lead+">TLV(%d): type:0x%X, val=0x%X", i+1, tlv.Type, tlv.Value)
+				if tlv.Type == proxyproto.PP2_TYPE_SPC {
+					spctlv := proxyproto.NewSpcTlv()
+					spctlv.DecodeTlv(tlv.Value)
+
+					log.Printf("Count: %d", spctlv.Header.Count)
+					for i, subtlv := range spctlv.SubTlvs {
+						log.Printf("%d: subtlv.type=%d, len=%d, value=%s(%d)", i, subtlv.Type, subtlv.Length, string(subtlv.Value), len(subtlv.Value))
+					}
+				} else {
+					log.Printf(lead+">TLV(%d): type:0x%X, val=0x%X", i+1, tlv.Type, tlv.Value)
+				}
 			}
 		}
 
@@ -341,7 +351,7 @@ func sendProxyProtocolV2(conn net.Conn, addrType string, myTlvs *TLVs) error {
 	var enableCrc bool = false
 
 	if tlvs != nil {
-		tlvs := []proxyproto.TLV{}
+		//tlvs := []proxyproto.TLV{}
 
 		/*
 			tlvs = setTlvAlpn(tlvs)
@@ -354,18 +364,34 @@ func sendProxyProtocolV2(conn net.Conn, addrType string, myTlvs *TLVs) error {
 			}
 		*/
 
-		for _, t := range *myTlvs {
-			tlv := proxyproto.TLV{
-				//Type:  proxyproto.PP2Type(0xea), // PP2_TYPE_AWS, 0xea
-				Type:  proxyproto.PP2Type(t.Code),
-				Value: []byte(t.Val),
-			}
+		/*
+			for _, t := range *myTlvs {
+				tlv := proxyproto.TLV{
+					//Type:  proxyproto.PP2Type(0xea), // PP2_TYPE_AWS, 0xea
+					Type:  proxyproto.PP2Type(t.Code),
+					Value: []byte(t.Val),
+				}
 
-			tlvs = append(tlvs, tlv)
-			log.Printf("  TLVs: type=0x%X, val=0x%X", tlv.Type, tlv.Value)
+				tlvs = append(tlvs, tlv)
+				log.Printf("  TLVs: type=0x%X, val=0x%X", tlv.Type, tlv.Value)
+			}
+		*/
+
+		spctlv := proxyproto.NewSpcTlv()
+		spctlv.EnableBase64Encode()
+
+		for _, t := range *myTlvs {
+			spctlv.AddSubTlvValue(uint16(t.Code), t.Val)
+			log.Printf("  Sub TLV: type=0x%X, val=0x%X", t.Code, t.Val)
 		}
 
-		err = header.SetTLVs(tlvs)
+		tlv, err := spctlv.BuildTlv()
+		if err != nil {
+			log.Printf("failed to build SPC TLV with SubTlv: %s\n", err)
+			return err
+		}
+
+		err = header.SetTLVs([]proxyproto.TLV{*tlv})
 		if err != nil {
 			log.Printf("failed to set TLV: %s\n", err)
 		}
